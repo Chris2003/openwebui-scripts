@@ -75,7 +75,7 @@ For reference, here's what these scripts are built and tested against:
 ## Getting Started
 
 ```bash
-git clone https://github.com/yourusername/openwebui-scripts.git
+git clone https://github.com/Chris2003/openwebui-scripts.git
 cd openwebui-scripts
 chmod +x *.sh
 ```
