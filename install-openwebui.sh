@@ -66,9 +66,51 @@ done
 if [ -z "$PYTHON_BIN" ]; then
     echo ""
     echo "  ✘ No compatible Python found (requires 3.11 or 3.12)."
-    echo "  Install one with:"
-    echo "    sudo apt install python3.12 python3.12-venv"
-    exit 1
+    echo "  Your system Python is too new for open-webui."
+    echo ""
+    echo "  pyenv will be used to install Python 3.12 only for this venv."
+    echo "  It will NOT affect your system Python in any way."
+    echo ""
+    read -p "  Would you like to install Python 3.12 via pyenv (isolated, no system changes)? (y/N): " INSTALL_PYTHON
+    if [[ "$INSTALL_PYTHON" =~ ^[Yy]$ ]]; then
+        echo ""
+
+        # Install pyenv build dependencies (system libs only, no Python)
+        echo "  Installing pyenv build dependencies..."
+        sudo apt-get update -qq
+        sudo apt-get install -y --quiet \
+            build-essential libssl-dev zlib1g-dev libbz2-dev \
+            libreadline-dev libsqlite3-dev curl libncursesw5-dev \
+            xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev
+
+        # Install pyenv into the user home (no sudo needed, no system changes)
+        if [ ! -d "$HOME_DIR/.pyenv" ]; then
+            echo "  Installing pyenv into $HOME_DIR/.pyenv ..."
+            curl -fsSL https://pyenv.run | bash
+        else
+            echo "  ✔ pyenv already installed at $HOME_DIR/.pyenv"
+        fi
+
+        export PYENV_ROOT="$HOME_DIR/.pyenv"
+        export PATH="$PYENV_ROOT/bin:$PATH"
+        eval "$(pyenv init -)"
+
+        # Install Python 3.12 via pyenv (goes to ~/.pyenv/versions/3.12.x)
+        echo "  Installing Python 3.12 via pyenv (this may take a few minutes)..."
+        pyenv install -s 3.12
+        pyenv shell 3.12
+
+        PYTHON_BIN="$PYENV_ROOT/versions/$(pyenv version-name)/bin/python3"
+        PYTHON_VERSION=$("$PYTHON_BIN" --version 2>&1 | awk '{print $2}')
+        echo "  ✔ Python $PYTHON_VERSION ready (isolated to pyenv, not system-wide)"
+    else
+        echo "  Aborted."
+        echo ""
+        echo "  If you want to install manually:"
+        echo "    curl https://pyenv.run | bash"
+        echo "    pyenv install 3.12"
+        exit 1
+    fi
 fi
 
 # --- Step 2: Install system dependencies ---
