@@ -1,8 +1,8 @@
 #!/bin/bash
 # ============================================================
 # Open WebUI Installer
-# Fresh install: Python venv, pip, data directory,
-# and optional systemd service setup
+# Installs Open WebUI directly on the system in a Python venv
+# No Docker required
 #
 # Usage:
 #   ./install-openwebui.sh            → installs latest version
@@ -11,7 +11,7 @@
 
 set -e
 
-# --- Defaults ---
+# --- Resolve real user (safe with or without sudo) ---
 CURRENT_USER="${SUDO_USER:-$USER}"
 HOME_DIR=$(eval echo "~$CURRENT_USER")
 INSTALL_DIR="$HOME_DIR/openwebui"
@@ -32,6 +32,7 @@ fi
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
 echo "║          Open WebUI Installer                    ║"
+echo "║          Native Linux — pip + venv               ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
 echo "  Install directory : $INSTALL_DIR"
@@ -40,40 +41,63 @@ echo "  Port              : $PORT"
 echo "  Target version    : $TARGET_LABEL"
 echo ""
 
-# --- Check Python 3.11+ ---
-echo "▶ Step 1: Checking Python version..."
-PYTHON_BIN=$(which python3)
-PYTHON_VERSION=$($PYTHON_BIN --version 2>&1 | awk '{print $2}')
-PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
-PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
+# --- Step 1: Find best compatible Python ---
+# open-webui requires Python >= 3.11 and < 3.13
+echo "▶ Step 1: Finding compatible Python version..."
+PYTHON_BIN=""
 
-if [ "$PYTHON_MAJOR" -lt 3 ] || [ "$PYTHON_MINOR" -lt 11 ]; then
-    echo "  ✘ Python 3.11 or higher is required. Found: $PYTHON_VERSION"
+for candidate in python3.12 python3.11 python3; do
+    if command -v "$candidate" &>/dev/null; then
+        VER=$("$candidate" --version 2>&1 | awk '{print $2}')
+        MAJOR=$(echo "$VER" | cut -d. -f1)
+        MINOR=$(echo "$VER" | cut -d. -f2)
+
+        if [ "$MAJOR" -eq 3 ] && [ "$MINOR" -ge 11 ] && [ "$MINOR" -lt 13 ]; then
+            PYTHON_BIN=$(which "$candidate")
+            PYTHON_VERSION="$VER"
+            echo "  ✔ Using Python $PYTHON_VERSION ($PYTHON_BIN)"
+            break
+        else
+            echo "  ℹ $candidate $VER — not compatible (need 3.11–3.12), skipping"
+        fi
+    fi
+done
+
+if [ -z "$PYTHON_BIN" ]; then
+    echo ""
+    echo "  ✘ No compatible Python found (requires 3.11 or 3.12)."
+    echo "  Install one with:"
+    echo "    sudo apt install python3.12 python3.12-venv"
     exit 1
 fi
-echo "  ✔ Python $PYTHON_VERSION found"
 
-# --- Create install directory ---
+# --- Step 2: Install system dependencies ---
 echo ""
-echo "▶ Step 2: Creating directories..."
+echo "▶ Step 2: Installing system dependencies..."
+sudo apt-get install -y python3-venv python3-pip ffmpeg libsm6 libxext6 --quiet
+echo "  ✔ Dependencies installed"
+
+# --- Step 3: Create directories ---
+echo ""
+echo "▶ Step 3: Creating directories..."
 mkdir -p "$INSTALL_DIR"
 mkdir -p "$DATA_DIR"
 echo "  ✔ Install dir : $INSTALL_DIR"
 echo "  ✔ Data dir    : $DATA_DIR"
 
-# --- Create virtual environment ---
+# --- Step 4: Create virtual environment ---
 echo ""
-echo "▶ Step 3: Creating virtual environment..."
+echo "▶ Step 4: Creating virtual environment..."
 if [ -d "$VENV_DIR" ]; then
     echo "  ⚠ Venv already exists at $VENV_DIR — skipping creation"
 else
-    $PYTHON_BIN -m venv "$VENV_DIR"
+    "$PYTHON_BIN" -m venv "$VENV_DIR"
     echo "  ✔ Venv created at: $VENV_DIR"
 fi
 
-# --- Install open-webui ---
+# --- Step 5: Install open-webui ---
 echo ""
-echo "▶ Step 4: Installing open-webui ($TARGET_LABEL)..."
+echo "▶ Step 5: Installing open-webui ($TARGET_LABEL)..."
 source "$VENV_DIR/bin/activate"
 pip install --upgrade pip --quiet
 pip install $PIP_INSTALL_ARG --quiet
@@ -81,7 +105,7 @@ pip install $PIP_INSTALL_ARG --quiet
 INSTALLED_VERSION=$(pip show open-webui | grep Version | awk '{print $2}')
 echo "  ✔ Installed version: $INSTALLED_VERSION"
 
-# --- Ask about systemd service ---
+# --- Step 6: Ask about systemd service ---
 echo ""
 read -p "  Would you like to set up a systemd service to run Open WebUI on boot? (y/N): " SETUP_SERVICE_INPUT
 if [[ "$SETUP_SERVICE_INPUT" =~ ^[Yy]$ ]]; then
@@ -90,7 +114,7 @@ fi
 
 if [ "$SETUP_SERVICE" = true ]; then
     echo ""
-    echo "▶ Step 5: Setting up systemd service..."
+    echo "▶ Step 6: Setting up systemd service..."
 
     OWUI_BIN="$VENV_DIR/bin/open-webui"
     SERVICE_NAME="openwebui"
@@ -126,9 +150,47 @@ EOF
         echo "  ✘ Service did not start — check logs with: sudo journalctl -u $SERVICE_NAME -n 50"
         exit 1
     fi
+
+    # --- Step 7: Create desktop shortcut ---
+    echo ""
+    read -p "  Would you like a desktop shortcut to launch Open WebUI in your browser? (y/N): " SETUP_SHORTCUT
+    if [[ "$SETUP_SHORTCUT" =~ ^[Yy]$ ]]; then
+        LAUNCHER="$HOME_DIR/openwebui/launch-openwebui.sh"
+        DESKTOP_FILE="$HOME_DIR/Desktop/OpenWebUI.desktop"
+
+        cat > "$LAUNCHER" <<LAUNCHER
+#!/bin/bash
+# Start the service if not already running
+if ! systemctl is-active --quiet openwebui; then
+    sudo systemctl start openwebui
+    sleep 4
+fi
+# Open browser
+xdg-open http://localhost:$PORT
+LAUNCHER
+        chmod +x "$LAUNCHER"
+
+        cat > "$DESKTOP_FILE" <<DESKTOP
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Open WebUI
+Comment=Launch Open WebUI AI Interface
+Exec=bash -c '$LAUNCHER'
+Icon=applications-science
+Terminal=false
+Categories=Network;AI;
+DESKTOP
+        chmod +x "$DESKTOP_FILE"
+
+        # Trust the desktop file on GNOME
+        gio set "$DESKTOP_FILE" metadata::trusted true 2>/dev/null || true
+
+        echo "  ✔ Desktop shortcut created at: $DESKTOP_FILE"
+    fi
 else
     echo ""
-    echo "▶ Step 5: Skipping systemd setup."
+    echo "▶ Step 6: Skipping systemd setup."
     echo "  To start Open WebUI manually:"
     echo "    source $VENV_DIR/bin/activate"
     echo "    DATA_DIR=$DATA_DIR open-webui serve --host 0.0.0.0 --port $PORT"
@@ -141,10 +203,11 @@ echo "║         ✅  Installation Complete!               ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
 echo "  • Installed version : $INSTALLED_VERSION"
+echo "  • Python            : $PYTHON_VERSION"
 echo "  • Venv              : $VENV_DIR"
 echo "  • Data directory    : $DATA_DIR"
 echo "  • Port              : $PORT"
 echo ""
-echo "  → Open http://$(hostname -I | awk '{print $1}'):$PORT in your browser"
+echo "  → Open http://localhost:$PORT in your browser"
 echo "  → First time? Create an admin account on first visit."
 echo ""

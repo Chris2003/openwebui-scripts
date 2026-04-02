@@ -10,7 +10,7 @@ The official Open WebUI repo is almost entirely Docker-focused. These scripts fi
 
 ### `install-openwebui.sh` — Fresh Installer
 
-Sets up Open WebUI from scratch: creates a virtual environment, installs the package, sets up a persistent data directory, and optionally configures a systemd service to run on boot.
+Sets up Open WebUI from scratch directly on the system — no Docker required. Automatically finds the best compatible Python version (3.11–3.12), creates a virtual environment, installs the package, sets up a persistent data directory, and optionally configures a systemd service and desktop shortcut.
 
 ```bash
 # Install latest version
@@ -69,6 +69,19 @@ Makes Open WebUI accessible to anyone on your local network. Ensures Open WebUI 
 
 ---
 
+### `create-desktop-shortcut.sh` — Desktop Shortcut
+
+Creates a desktop icon that starts the Open WebUI service if it is not already running, then opens it in your browser with a single click. Can also be run standalone on an existing install.
+
+```bash
+./create-desktop-shortcut.sh           # default port 8080
+./create-desktop-shortcut.sh 9090      # custom port
+```
+
+> ℹ️ If the icon appears untrusted on first use, right-click it and select **Allow Launching**.
+
+---
+
 ### `backup-openwebui.sh` — Backup
 
 Creates a timestamped `.tar.gz` backup of your Open WebUI data directory. Safe to run while Open WebUI is running. Works standalone or in a cron job.
@@ -123,19 +136,21 @@ Updates the Ollama binary to the latest version on bare Linux installs. Does not
 ## Full Lifecycle
 
 ```
-install-openwebui.sh        ← start here
+install-openwebui.sh          ← start here
         ↓
-setup-openwebui-service.sh  ← optional: run on boot
+setup-openwebui-service.sh    ← optional: run on boot
         ↓
-expose-openwebui.sh         ← optional: open to local network
+expose-openwebui.sh           ← optional: open to local network
         ↓
-backup-openwebui.sh         ← run regularly / cron
+create-desktop-shortcut.sh    ← optional: one-click launcher
         ↓
-update-openwebui.sh         ← when new version drops
+backup-openwebui.sh           ← run regularly / cron
         ↓
-restore-openwebui.sh        ← if something goes wrong
+update-openwebui.sh           ← when new version drops
         ↓
-uninstall-openwebui.sh      ← clean removal
+restore-openwebui.sh          ← if something goes wrong
+        ↓
+uninstall-openwebui.sh        ← clean removal
 ```
 
 ---
